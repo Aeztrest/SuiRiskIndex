@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Node / Next
+node_modules/
+.next/
+dist/
+
+# Rust / Cargo
+target/
+
+# general
+.DS_Store
+.idea/
+.vscode/
+.env
