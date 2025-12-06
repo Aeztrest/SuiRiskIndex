@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: sui_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: sui_db
+      MYSQL_USER: sui
+      MYSQL_PASSWORD: suipass
+    ports:
+      - "3309:3306"      # Host:3309 -> Container:3306 (çakışmasın diye)
+    volumes:
+      - db_data:/var/lib/mysql
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: sui_phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: db
+      PMA_USER: root
+      PMA_PASSWORD: rootpass
+      UPLOAD_LIMIT: 100M
+    ports:
+      - "8089:80"        # http://localhost:8080
+    depends_on:
+      - db
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sui_backend
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: sui
+      DB_PASSWORD: suipass
+      DB_NAME: sui_db
+      SURFLUX_API_KEY: "d920d24a-7967-43cf-8512-7c093abfb131"
+    volumes:
+      - ./backend/app:/app/app   # Hot reload için kodu içeriye bağlıyoruz
+    ports:
+      - "8009:8000"              # http://localhost:8000
+    depends_on:
+      - db
+
+volumes:
+  db_data:
