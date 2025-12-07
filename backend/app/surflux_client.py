@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 
 import httpx
 
-SURFLUX_BASE_URL = "https://testnet-api.surflux.dev"
+SURFLUX_BASE_URL = "https://api.surflux.dev"
 SURFLUX_API_KEY = os.getenv("SURFLUX_API_KEY")
 
 

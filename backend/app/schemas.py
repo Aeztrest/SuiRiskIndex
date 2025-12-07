@@ -1,15 +1,17 @@
 # app/schemas.py
 
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
 class MintRiskIdentityRequest(BaseModel):
     """
     Risk NFT mint payload'ı isteyen client'ın göndereceği body.
-    Şimdilik score'u client veriyor, ileride backend hesaplayabilir.
+    Score artık backend'de hesaplanıyor; eski client'lar için optional bırakıldı.
     """
     address: str = Field(..., description="Kullanıcının Sui cüzdan adresi")
-    score: int = Field(..., ge=0, le=100, description="0-100 arası risk skoru")
+    score: Optional[int] = Field(None, ge=0, le=100, description="(Deprecated) 0-100 arası risk skoru; backend tarafından göz ardı edilir")
 
 
 class MintRiskIdentityPayload(BaseModel):

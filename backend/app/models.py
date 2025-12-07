@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     DECIMAL,
     Float,
+    BigInteger,
 )
 from sqlalchemy.orm import relationship
 
@@ -41,6 +42,10 @@ class Pool(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     sui_pool_id = Column(String(255), unique=True, nullable=False, index=True)
+
+    # Surflux'taki poolName (ör: SUI_USDC, NS_SUI, DEEP_SUI)
+    pool_name = Column(String(128), nullable=False, index=True)
+
     dex_name = Column(String(128), nullable=False, index=True)
 
     token0_id = Column(Integer, ForeignKey("tokens.id"), nullable=False)
@@ -86,3 +91,14 @@ class PoolMetric(Base):
     captured_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     pool = relationship("Pool", back_populates="metrics")
+
+
+class RiskIdentity(Base):
+    __tablename__ = "risk_identities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    address = Column(String(128), index=True, nullable=False)
+    score = Column(Integer, nullable=False)
+    level = Column(String(32), nullable=False)
+    timestamp_ms = Column(BigInteger, nullable=False)
+    tx_digest = Column(String(255), nullable=False)

@@ -11,6 +11,7 @@ from . import models
 from .surflux_client import fetch_deepbook_pools, SurfluxError
 from .risk_scoring import calculate_and_store_pool_metrics
 from .risk_logic import map_risk_score_to_level, clamp_score
+from .wallet_risk import compute_wallet_risk_score
 from .schemas import MintRiskIdentityRequest, MintRiskIdentityPayload
 
 logger = logging.getLogger(__name__)
@@ -88,16 +89,13 @@ def example_endpoint(db: Session = Depends(get_db)):
 
 @app.get("/pools")
 def list_pools(db: Session = Depends(get_db)):
-    """
-    Kayıtlı tüm havuzları listeler.
-    Şu an boş olacak, indexer ile dolduracağız.
-    """
     pools = db.query(models.Pool).all()
 
     return [
         {
             "id": p.id,
             "sui_pool_id": p.sui_pool_id,
+            "pool_name": p.pool_name,
             "dex_name": p.dex_name,
             "token0": p.token0.symbol if p.token0 else None,
             "token1": p.token1.symbol if p.token1 else None,
@@ -189,12 +187,20 @@ async def sync_deepbook_pools(db: Session = Depends(get_db)):
         if not pool:
             pool = models.Pool(
                 sui_pool_id=p["pool_id"],
+                pool_name=p["pool_name"],  # Surflux get_pools'tan gelen isim (SUI_USDC vb.)
                 dex_name="Deepbook",
                 token0_id=base_token.id,
                 token1_id=quote_token.id,
             )
             db.add(pool)
             created_pools += 1
+        else:
+            # Eski kayıtsa pool_name yoksa/güncellenmesi gerekiyorsa set et
+            if not getattr(pool, "pool_name", None) and "pool_name" in p:
+                pool.pool_name = p["pool_name"]
+            # Dex adını normalize etmek istersen:
+            if pool.dex_name != "Deepbook":
+                pool.dex_name = "Deepbook"
 
     db.commit()
 
@@ -218,9 +224,11 @@ async def sync_deepbook_metrics_for_pool(
     if not pool:
         raise HTTPException(status_code=404, detail="Pool not found")
 
-    # Şimdilik Surflux için pool_name olarak sui_pool_id'yi kullanıyoruz.
-    # Eğer Surflux 'pool_name' diye farklı bir alan istiyorsa, modeli ona göre genişletebiliriz.
-    pool_name = pool.sui_pool_id
+    if not pool.pool_name:
+        raise HTTPException(status_code=500, detail="Pool has no pool_name set")
+
+    # Surflux için pool_name: SUI_USDC, NS_SUI vb.
+    pool_name = pool.pool_name
 
     try:
         metric = await calculate_and_store_pool_metrics(
@@ -257,7 +265,16 @@ async def sync_deepbook_metrics_for_all_pools(db: Session = Depends(get_db)):
 
     results = []
     for pool in pools:
-        pool_name = pool.sui_pool_id
+        if not pool.pool_name:
+            results.append(
+                {
+                    "pool_id": pool.id,
+                    "error": "Pool has no pool_name set",
+                }
+            )
+            continue
+
+        pool_name = pool.pool_name
 
         try:
             metric = await calculate_and_store_pool_metrics(
@@ -305,8 +322,19 @@ def get_level_from_score(score: int):
     }
 
 
+@app.get("/risk/identity/wallet-score/{address}")
+def get_wallet_risk_score(address: str, db: Session = Depends(get_db)):
+    score = compute_wallet_risk_score(address, db)
+    level = map_risk_score_to_level(score)
+    return {
+        "address": address,
+        "score": score,
+        "level": level,
+    }
+
+
 @app.post("/risk/identity/mint-payload", response_model=MintRiskIdentityPayload)
-def get_mint_risk_identity_payload(body: MintRiskIdentityRequest):
+def get_mint_risk_identity_payload(body: MintRiskIdentityRequest, db: Session = Depends(get_db)):
     """
     Verilen cüzdan adresi ve risk skoruna göre,
     Sui üstünde çağrılması gereken Move fonksiyonunun payload'ını döner.
@@ -332,7 +360,8 @@ def get_mint_risk_identity_payload(body: MintRiskIdentityRequest):
             detail="SUI_RISK_PACKAGE_ID env değişkeni tanımlı değil.",
         )
 
-    score = clamp_score(body.score)
+    computed_score = compute_wallet_risk_score(body.address, db)
+    score = clamp_score(computed_score)
     level = map_risk_score_to_level(score)
 
     ts_ms = int(time.time() * 1000)
@@ -355,3 +384,44 @@ def get_mint_risk_identity_payload(body: MintRiskIdentityRequest):
         level=level,
         timestamp_ms=ts_ms,   # args ile aynı ts_ms
     )
+
+
+@app.post("/risk/identity/store")
+def store_identity(data: dict, db: Session = Depends(get_db)):
+    """
+    Mint edilen Risk Identity NFT bilgilerini veritabanına kaydeder.
+    Frontend mint işlemi sonrasında bu endpoint'i çağırır.
+    """
+    entry = models.RiskIdentity(
+        address=data["address"],
+        score=data["score"],
+        level=data["level"],
+        timestamp_ms=data["timestamp_ms"],
+        tx_digest=data["tx_digest"],
+    )
+    db.add(entry)
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.get("/risk/identity/history/{address}")
+def get_identity_history(address: str, db: Session = Depends(get_db)):
+    """
+    Verilen cüzdan adresi için kayıtlı tüm Risk Identity geçmişini döner.
+    Timestamp'e göre azalan sırada (en yeni önce).
+    """
+    rows = (
+        db.query(models.RiskIdentity)
+        .filter(models.RiskIdentity.address == address)
+        .order_by(models.RiskIdentity.timestamp_ms.desc())
+        .all()
+    )
+    return [
+        {
+            "score": r.score,
+            "level": r.level,
+            "timestamp_ms": r.timestamp_ms,
+            "tx_digest": r.tx_digest,
+        }
+        for r in rows
+    ]
