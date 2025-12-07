@@ -22,7 +22,13 @@ app = FastAPI(
 
 # Sui Risk Identity konfigürasyonu (env'den okunur)
 SUI_RPC_URL = os.getenv("SUI_RPC_URL", "https://fullnode.testnet.sui.io:443")
-SUI_RISK_PACKAGE_ID = os.getenv("SUI_RISK_PACKAGE_ID", "0x52e578e03cffbd9b9a7c0873a941e53b3847d0f42a7764faf8d2c4d59fa557a9")
+
+# Default olarak en son deploy ettiğin package ID'yi bırakıyorum;
+# production'da mutlaka .env'den gelsin.
+SUI_RISK_PACKAGE_ID = os.getenv(
+    "SUI_RISK_PACKAGE_ID",
+    "0xb41df90acf072d4c7e74f44091ebadbe63758b7b4a20ea1cfe6a7b4456fa5afb",
+)
 SUI_RISK_MODULE = os.getenv("SUI_RISK_MODULE", "risk_identity")
 SUI_RISK_FUNCTION_MINT = os.getenv("SUI_RISK_FUNCTION_MINT", "mint_identity")
 
@@ -308,6 +314,15 @@ def get_mint_risk_identity_payload(body: MintRiskIdentityRequest):
     Gerçek transaction'ı backend imzalamıyor;
     frontend veya wallet bu bilgiyi kullanarak
     risk_identity::mint_identity çağrısını yapacak.
+
+    Move imzası:
+    public entry fun mint_identity(
+        recipient: address,
+        score: u64,
+        level: u8,
+        ts_ms: u64,
+        ctx: &mut TxContext
+    )
     """
 
     if not SUI_RISK_PACKAGE_ID:
@@ -320,12 +335,17 @@ def get_mint_risk_identity_payload(body: MintRiskIdentityRequest):
     score = clamp_score(body.score)
     level = map_risk_score_to_level(score)
 
+    ts_ms = int(time.time() * 1000)
+
+    # 3) Move fonksiyonuna gidecek argümanlar
     args = [
-        body.address,
-        str(score),
-        str(level),
+        body.address,    # recipient: address
+        str(score),      # score: u64
+        str(level),      # level: u8
+        str(ts_ms),      # ts_ms: u64
     ]
 
+    # 4) Frontend / wallet için payload
     return MintRiskIdentityPayload(
         package_id=SUI_RISK_PACKAGE_ID,
         module=SUI_RISK_MODULE,
@@ -333,4 +353,5 @@ def get_mint_risk_identity_payload(body: MintRiskIdentityRequest):
         args=args,
         score=score,
         level=level,
+        timestamp_ms=ts_ms,   # args ile aynı ts_ms
     )

@@ -15,10 +15,17 @@ class MintRiskIdentityRequest(BaseModel):
 class MintRiskIdentityPayload(BaseModel):
     """
     Frontend / wallet tarafının direkt kullanabileceği Move call bilgisi.
+    args = [
+        address,
+        score,
+        level,
+        ts_ms
+    ]
     """
     package_id: str
     module: str
     function: str
-    args: list[str]
-    score: int
-    level: int
+    args: list[str]          # Move call argümanları (4 eleman)
+    score: int               # normalize edilmiş risk skoru
+    level: int               # risk seviye (1-3)
+    timestamp_ms: int        # backend timestamp (mint_identity ts_ms parametresine gider)
