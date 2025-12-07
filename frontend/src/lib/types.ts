@@ -19,6 +19,48 @@ export interface PoolMetrics {
   captured_at: string;
 }
 
+export interface PoolSummaryMetric {
+  tvl_usd: number;
+  volume_24h: number;
+  risk_score: number;
+  captured_at: string;
+}
+
+export interface PoolSummary {
+  id: number;
+  sui_pool_id: string;
+  pool_name?: string | null;
+  dex_name: string;
+  token0: string | null;
+  token1: string | null;
+  metric: PoolSummaryMetric | null;
+}
+
+export interface WalletGraphNode {
+  id: string;
+  volume: number;
+  trades: number;
+  risk: number; // 0-1
+}
+
+export interface WalletGraphEdge {
+  source: string;
+  target: string;
+  volume: number;
+  trades: number;
+}
+
+export interface WalletGraphResponse {
+  pool_id: number;
+  pool_name: string;
+  nodes: WalletGraphNode[];
+  edges: WalletGraphEdge[];
+  meta: {
+    total_volume: number;
+    total_trades: number;
+  };
+}
+
 // Risk Identity types
 export interface MintPayloadRequest {
   address: string;

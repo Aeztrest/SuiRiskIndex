@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -58,23 +58,28 @@ async def fetch_order_book_depth(pool_name: str, limit: int = 20) -> Dict[str, A
 
 async def fetch_recent_trades(
     pool_name: str,
-    limit: int = 100,
+    limit: int = 200,
+    from_ts: Optional[int] = None,
+    to_ts: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
-    GET /deepbook/{poolName}/trades?limit=...&api-key=...
-    'from' / 'to' paramlarını istersen ekleyebiliriz.
+    Surflux Deepbook Recent Trades
+    GET /deepbook/{poolName}/trades?limit=...&from=...&to=...&api-key=...
     """
     api_key = _get_api_key()
     url = f"{SURFLUX_BASE_URL}/deepbook/{pool_name}/trades"
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(
-            url,
-            params={
-                "limit": limit,
-                "api-key": api_key,
-            },
-        )
+    params: Dict[str, Any] = {
+        "limit": limit,
+        "api-key": api_key,
+    }
+    if from_ts is not None:
+        params["from"] = from_ts
+    if to_ts is not None:
+        params["to"] = to_ts
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.get(url, params=params)
         if resp.status_code != 200:
             raise SurfluxError(
                 f"Recent trades failed: {resp.status_code} - {resp.text[:200]}"

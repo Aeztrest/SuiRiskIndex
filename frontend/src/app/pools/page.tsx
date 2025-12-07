@@ -4,12 +4,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiClient } from '@/lib/api';
 import { Pool, PoolMetrics } from '@/lib/types';
-import { truncateAddress, formatCurrency, formatNumber } from '@/lib/utils';
+import { truncateAddress, formatCurrency } from '@/lib/utils';
 import RiskBadge from '@/components/RiskBadge';
 import Button from '@/components/Button';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import ErrorAlert from '@/components/ErrorAlert';
 import SuccessAlert from '@/components/SuccessAlert';
+import { PoolsBubbleMap } from '@/components/PoolsBubbleMap';
+import { WalletTradeBubbleMap } from '@/components/WalletTradeBubbleMap';
 
 interface PoolWithMetrics extends Pool {
   metrics?: PoolMetrics;
@@ -21,6 +23,9 @@ export default function PoolsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [selectedPoolId, setSelectedPoolId] = useState<number | null>(null);
+
+  const selectedPool = selectedPoolId ? pools.find((p) => p.id === selectedPoolId) ?? null : null;
 
   useEffect(() => {
     loadPools();
@@ -46,6 +51,9 @@ export default function PoolsPage() {
       );
       
       setPools(poolsWithMetrics);
+      if (!selectedPoolId && poolsWithMetrics.length > 0) {
+        setSelectedPoolId(poolsWithMetrics[0].id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load pools');
     } finally {
@@ -121,6 +129,15 @@ export default function PoolsPage() {
       {error && <ErrorAlert message={error} onDismiss={() => setError(null)} />}
       {successMessage && <SuccessAlert message={successMessage} onDismiss={() => setSuccessMessage(null)} />}
 
+      {/* Bubble map visualization */}
+      <section className="bg-white border border-gray-200 rounded-lg p-6 mb-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Liquidity Pools Bubble Map</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Each bubble represents a pool. Size = TVL, color = risk score (green → yellow → red).
+        </p>
+        <PoolsBubbleMap />
+      </section>
+
       {/* Toolbar */}
       <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6 flex flex-wrap gap-3">
         <Button onClick={handleSyncPools} variant="primary">
@@ -173,7 +190,15 @@ export default function PoolsPage() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {pools.map((pool) => (
-                  <tr key={pool.id} className="hover:bg-gray-50 transition-colors">
+                  <tr
+                    key={pool.id}
+                    className={`hover:bg-gray-50 transition-colors ${selectedPoolId === pool.id ? 'bg-blue-50/40' : ''}`}
+                    onClick={(e) => {
+                      const target = e.target as HTMLElement;
+                      if (target.closest('a')) return;
+                      setSelectedPoolId(pool.id);
+                    }}
+                  >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <Link
                         href={`/pools/${pool.id}`}
@@ -273,10 +298,59 @@ export default function PoolsPage() {
                     </button>
                   </div>
                 )}
+
+                <div className="mt-3">
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSelectedPoolId(pool.id);
+                    }}
+                    className="text-sm text-gray-700 hover:text-gray-900 underline"
+                  >
+                    View wallet graph for this pool
+                  </button>
+                </div>
               </Link>
             ))}
           </div>
         </div>
+      )}
+
+      {selectedPoolId && (
+        <section className="bg-white border border-gray-200 rounded-lg p-6 mt-6 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Pool Wallet Graph</h2>
+              <p className="text-sm text-gray-600">Maker/taker interaction graph built from Surflux recent trades.</p>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <label htmlFor="pool-select" className="sr-only">Select pool</label>
+              <select
+                id="pool-select"
+                value={selectedPoolId}
+                onChange={(e) => setSelectedPoolId(Number(e.target.value))}
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm"
+              >
+                {pools.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.token0} / {p.token1}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {selectedPool ? (
+            <div className="space-y-2 mb-4 text-sm text-gray-700">
+              <div className="font-medium">{selectedPool.token0} / {selectedPool.token1}</div>
+              <div className="text-xs text-gray-500">Pool ID: {truncateAddress(selectedPool.sui_pool_id)}</div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600 mb-4">Select a pool to see its wallet interaction graph.</p>
+          )}
+
+          <WalletTradeBubbleMap poolId={selectedPoolId} />
+        </section>
       )}
     </div>
   );

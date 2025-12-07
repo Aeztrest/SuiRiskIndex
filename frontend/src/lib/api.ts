@@ -2,6 +2,7 @@ import { API_BASE_URL } from './config';
 import type {
   Pool,
   PoolMetrics,
+  PoolSummary,
   MintPayloadRequest,
   MintPayloadResponse,
   SyncPoolsResponse,
@@ -9,6 +10,7 @@ import type {
   StoreIdentityRequest,
   IdentityHistoryEntry,
   WalletRiskScoreResponse,
+  WalletGraphResponse,
 } from './types';
 
 class ApiClient {
@@ -58,6 +60,14 @@ class ApiClient {
 
   async getPoolMetrics(poolId: number): Promise<PoolMetrics> {
     return this.request(`/pools/${poolId}/metrics/latest`);
+  }
+
+  async getPoolWalletGraph(poolId: number): Promise<WalletGraphResponse> {
+    return this.request(`/pools/${poolId}/wallet-graph`);
+  }
+
+  async getPoolsSummary(): Promise<PoolSummary[]> {
+    return this.request('/pools/summary');
   }
 
   // Sync endpoints

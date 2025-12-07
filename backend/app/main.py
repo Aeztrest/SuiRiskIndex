@@ -12,6 +12,7 @@ from .surflux_client import fetch_deepbook_pools, SurfluxError
 from .risk_scoring import calculate_and_store_pool_metrics
 from .risk_logic import map_risk_score_to_level, clamp_score
 from .wallet_risk import compute_wallet_risk_score
+from .wallet_graph import build_trade_graph_for_pool
 from .schemas import MintRiskIdentityRequest, MintRiskIdentityPayload
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,47 @@ def list_pools(db: Session = Depends(get_db)):
         }
         for p in pools
     ]
+
+
+@app.get("/pools/summary")
+def list_pools_with_latest_metrics(db: Session = Depends(get_db)):
+    """
+    Returns all pools with their latest risk metrics so the frontend can render a bubble map without multiple round trips.
+    """
+    pools = db.query(models.Pool).all()
+    result = []
+
+    for p in pools:
+        latest_metric = (
+            db.query(models.PoolMetric)
+            .filter(models.PoolMetric.pool_id == p.id)
+            .order_by(models.PoolMetric.captured_at.desc())
+            .first()
+        )
+
+        result.append(
+            {
+                "id": p.id,
+                "sui_pool_id": p.sui_pool_id,
+                "pool_name": getattr(p, "pool_name", None),
+                "dex_name": p.dex_name,
+                "token0": p.token0.symbol if p.token0 else None,
+                "token1": p.token1.symbol if p.token1 else None,
+                "metric":
+                    None
+                    if latest_metric is None
+                    else {
+                        "tvl_usd": float(latest_metric.tvl_usd) if latest_metric.tvl_usd is not None else 0.0,
+                        "volume_24h": float(latest_metric.volume_24h)
+                        if latest_metric.volume_24h is not None
+                        else 0.0,
+                        "risk_score": latest_metric.risk_score,
+                        "captured_at": latest_metric.captured_at.isoformat(),
+                    },
+            }
+        )
+
+    return result
 
 
 @app.get("/pools/{pool_id}/metrics/latest")
@@ -425,3 +467,34 @@ def get_identity_history(address: str, db: Session = Depends(get_db)):
         }
         for r in rows
     ]
+
+
+@app.get("/pools/{pool_id}/wallet-graph")
+async def get_wallet_graph(pool_id: int, db: Session = Depends(get_db)):
+    pool = db.get(models.Pool, pool_id)
+    if not pool:
+        raise HTTPException(status_code=404, detail="Pool not found")
+
+    if not pool.pool_name:
+        raise HTTPException(status_code=500, detail="Pool has no pool_name set")
+
+    if not pool.token1:
+        raise HTTPException(status_code=500, detail="Pool quote token missing")
+
+    base_decimals = pool.token0.decimals if pool.token0 else 9
+    quote_decimals = pool.token1.decimals if pool.token1 else 9
+
+    try:
+        graph = await build_trade_graph_for_pool(
+            pool=pool,
+            base_decimals=base_decimals,
+            quote_decimals=quote_decimals,
+            trades_limit=200,
+        )
+        return graph
+    except SurfluxError as e:
+        logger.exception("Surflux trades fetch failed")
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        logger.exception("Wallet graph build failed")
+        raise HTTPException(status_code=500, detail=f"Wallet graph build failed: {e}")
